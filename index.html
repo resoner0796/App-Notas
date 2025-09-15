@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplicación de Notas Definitiva</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937;
+            color: #f3f4f6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .note-card {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform 0.3s, background-color 0.3s, box-shadow 0.3s;
+        }
+        .note-card .note-preview {
+            word-wrap: break-word;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 5;
+            -webkit-box-orient: vertical;
+        }
+        #note-editor-container {
+            min-height: 16rem;
+            max-height: 60vh;
+            overflow-y: auto;
+            resize: vertical;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        #note-editor-container::-webkit-scrollbar {
+            display: none;
+        }
+        #note-editor:focus {
+            outline: none;
+        }
+        
+        /* Checklist styles */
+        .checklist-item-display {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+        }
+        .checklist-item-display input[type="checkbox"] {
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+            cursor: pointer;
+            height: 1.25rem; width: 1.25rem; min-width: 1.25rem;
+            background-color: transparent;
+            border: 2px solid #555;
+            border-radius: 50%;
+            transition: all 0.2s ease-in-out;
+            margin-right: 8px;
+            position: relative;
+        }
+        .checklist-item-display input[type="checkbox"]:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .checklist-item-display input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute; left: 50%; top: 50%;
+            width: 6px; height: 12px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+        .checklist-item-display span {
+            white-space: pre-wrap;
+            word-break: break-all;
+            flex-grow: 1;
+            outline: none;
+        }
+        .prose input[type="checkbox"] { margin: 0; }
+
+        /* Crop tool styles */
+        #crop-canvas-container {
+            position: relative;
+            overflow: hidden;
+            max-width: 100%;
+            cursor: crosshair; /* Added cursor */
+        }
+        #crop-canvas { display: block; background: #2d3748; }
+        #crop-selection {
+            position: absolute;
+            border: 2px dashed #a0a0ff;
+            box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+            /* Removed cursor: move; from here to be more specific */
+        }
+        .crop-selection-body {
+            width: 100%;
+            height: 100%;
+            cursor: move;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #a0a0ff;
+            border: 1px solid #fff;
+            border-radius: 50%;
+            z-index: 10;
+        }
+        .resize-handle.top-left { top: -6px; left: -6px; cursor: nwse-resize; }
+        .resize-handle.top-right { top: -6px; right: -6px; cursor: nesw-resize; }
+        .resize-handle.bottom-left { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .resize-handle.bottom-right { bottom: -6px; right: -6px; cursor: nwse-resize; }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center min-h-screen">
+
+    <!-- Main Container -->
+    <div id="app-container" class="w-full max-w-4xl bg-gray-800 shadow-xl rounded-2xl p-6 md:p-8 transition-colors duration-300">
+
+        <!-- Header -->
+        <header class="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <h1 class="text-3xl md:text-4xl font-bold mb-4 sm:mb-0">Mis Notas</h1>
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <input id="search-input" type="text" placeholder="Buscar notas..." class="p-2 w-full sm:w-64 rounded-full bg-gray-700 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+                <button id="add-note-btn" class="bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 px-4 md:px-6 rounded-full shadow-lg transition duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
+                    <span class="text-2xl">+</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Tabs -->
+        <div class="flex space-x-4 mb-6">
+            <button id="all-notes-btn" class="py-2 px-4 rounded-full font-semibold transition-colors bg-blue-600 text-white">Todas</button>
+            <button id="archived-notes-btn" class="py-2 px-4 rounded-full font-semibold transition-colors bg-gray-700 text-gray-200">Archivadas</button>
+        </div>
+
+        <!-- Notes List -->
+        <div id="notes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Notes will be injected here -->
+        </div>
+
+        <!-- Note Editor Modal -->
+        <div id="editor-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 hidden">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl transition-colors duration-300 flex flex-col">
+                <input id="note-title-input" type="text" placeholder="Título de la nota" class="w-full text-2xl md:text-3xl font-semibold mb-2 bg-gray-700 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
+                <div id="note-dates" class="text-xs text-gray-400 mb-4 hidden">
+                    <p id="created-at"></p>
+                    <p id="updated-at"></p>
+                </div>
+                <div id="toolbar" class="flex flex-wrap gap-2 mb-2">
+                    <button class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300" onclick="formatText('bold')"><b>B</b></button>
+                    <button class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300" onclick="formatText('italic')"><i>I</i></button>
+                    <button class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300" onclick="formatText('justifyLeft')"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4h14v2H3V4zm0 4h10v2H3V8zm0 4h14v2H3v-2zm0 4h10v2H3v-2z"></path></svg></button>
+                    <button class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300" onclick="formatText('justifyCenter')"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4h14v2H3V4zm2 4h10v2H5V8zm-2 4h14v2H3v-2zm2 4h10v2H5v-2z"></path></svg></button>
+                    <button class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300" onclick="formatText('justifyRight')"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M3 4h14v2H3V4zm4 4h10v2H7V8zm-4 4h14v2H3v-2zm4 4h10v2H7v-2z"></path></svg></button>
+                    <button id="add-image-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg></button>
+                    <button id="toggle-checklist-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-1 px-3 rounded-md transition duration-300">+ Checklist</button>
+                </div>
+                <div id="note-editor-container" class="w-full p-4 text-gray-200 bg-gray-700 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 transition-colors">
+                    <div id="note-editor" contenteditable="true" class="prose max-w-none text-gray-200 resize-y focus:outline-none" style="min-height: 200px;"></div>
+                </div>
+                <div class="flex justify-end space-x-4 mt-4">
+                    <button id="save-note-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Guardar</button>
+                    <button id="cancel-note-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Cancelar</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Image Crop Modal -->
+        <div id="crop-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 hidden">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl transition-colors duration-300 flex flex-col items-center">
+                <h2 class="text-xl font-bold mb-4">Recortar Imagen</h2>
+                <div id="crop-canvas-container">
+                    <canvas id="crop-canvas"></canvas>
+                    <div id="crop-selection">
+                        <div class="crop-selection-body"></div>
+                        <div class="resize-handle top-left"></div>
+                        <div class="resize-handle top-right"></div>
+                        <div class="resize-handle bottom-left"></div>
+                        <div class="resize-handle bottom-right"></div>
+                    </div>
+                </div>
+                <div class="flex justify-center space-x-4 mt-4">
+                    <button id="crop-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Recortar y Agregar</button>
+                    <button id="cancel-crop-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Delete Confirmation Modal -->
+        <div id="delete-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 hidden">
+            <div class="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center transition-colors duration-300">
+                <p class="text-lg font-semibold mb-4 text-gray-200">¿Estás seguro de que quieres eliminar esta nota?</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="confirm-delete-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Eliminar</button>
+                    <button id="cancel-delete-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-6 rounded-lg transition duration-300">Cancelar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirmation Message Box -->
+        <div id="confirmation-msg" class="fixed bottom-8 right-8 bg-green-500 text-white py-3 px-6 rounded-full shadow-lg transform transition-all duration-300 opacity-0 -translate-y-4">
+            Nota guardada con éxito.
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const searchInput = document.getElementById('search-input');
+        const addNoteBtn = document.getElementById('add-note-btn');
+        const notesContainer = document.getElementById('notes-container');
+        const editorModal = document.getElementById('editor-modal');
+        const noteTitleInput = document.getElementById('note-title-input');
+        const noteEditor = document.getElementById('note-editor');
+        const saveNoteBtn = document.getElementById('save-note-btn');
+        const cancelNoteBtn = document.getElementById('cancel-note-btn');
+        const deleteModal = document.getElementById('delete-modal');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+        const allNotesBtn = document.getElementById('all-notes-btn');
+        const archivedNotesBtn = document.getElementById('archived-notes-btn');
+        const confirmationMsg = document.getElementById('confirmation-msg');
+        const noteDatesContainer = document.getElementById('note-dates');
+        const createdAtParagraph = document.getElementById('created-at');
+        const updatedAtParagraph = document.getElementById('updated-at');
+        const toggleChecklistBtn = document.getElementById('toggle-checklist-btn');
+        const addImageBtn = document.getElementById('add-image-btn');
+        const imageInput = document.createElement('input');
+        imageInput.type = 'file';
+        imageInput.accept = 'image/*';
+        imageInput.style.display = 'none';
+
+        const cropModal = document.getElementById('crop-modal');
+        const cropCanvas = document.getElementById('crop-canvas');
+        const cropSelection = document.getElementById('crop-selection');
+        const cropBtn = document.getElementById('crop-btn');
+        const cancelCropBtn = document.getElementById('cancel-crop-btn');
+
+        let notes = [];
+        let editingNoteId = null;
+        let currentView = 'active';
+
+        // --- Core Functions ---
+        const formatDate = (dateString) => {
+            if (!dateString) return '';
+            const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            return new Date(dateString).toLocaleDateString('es-ES', options);
+        };
+
+        const showConfirmation = (message) => {
+            confirmationMsg.textContent = message;
+            confirmationMsg.classList.remove('opacity-0', '-translate-y-4');
+            confirmationMsg.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => {
+                confirmationMsg.classList.remove('opacity-100', 'translate-y-0');
+                confirmationMsg.classList.add('opacity-0', '-translate-y-4');
+            }, 3000);
+        };
+
+        function loadNotes() {
+            const savedNotes = localStorage.getItem('notes');
+            if (savedNotes) {
+                notes = JSON.parse(savedNotes);
+            }
+            renderNotes();
+        }
+
+        function saveNotes() {
+            localStorage.setItem('notes', JSON.stringify(notes));
+        }
+
+        // --- Content Handling ---
+        function getPlainText(html) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            tempDiv.querySelectorAll('.checklist-item-display').forEach(item => {
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                const text = item.querySelector('span').innerText;
+                const checkmark = checkbox && checkbox.checked ? '[x]' : '[ ]';
+                item.innerText = `${checkmark} ${text}\n`;
+            });
+            
+            tempDiv.querySelectorAll('img').forEach(img => {
+                img.outerHTML = ' [Imagen] ';
+            });
+            
+            tempDiv.querySelectorAll('div, p').forEach(el => {
+                el.innerText += '\n';
+            });
+
+            return tempDiv.innerText.replace(/\n+/g, ' ').trim();
+        }
+
+        function renderNotes() {
+            const searchQuery = searchInput.value.toLowerCase();
+            const filteredNotes = notes.filter(note => {
+                const matchesView = currentView === 'archived' ? note.status === 'archived' : note.status !== 'archived';
+                const plainTextContent = getPlainText(note.content);
+                const matchesSearch = note.title.toLowerCase().includes(searchQuery) || plainTextContent.toLowerCase().includes(searchQuery);
+                return matchesView && matchesSearch;
+            });
+
+            notesContainer.innerHTML = '';
+            filteredNotes.forEach(note => {
+                const noteElement = document.createElement('div');
+                noteElement.className = 'note-card p-6 rounded-xl shadow-md cursor-pointer bg-gray-700';
+                noteElement.dataset.id = note.id;
+
+                const previewText = getPlainText(note.content);
+
+                const noteContent = `
+                    <div class="flex-grow">
+                        <h2 class="text-xl font-semibold mb-2">${note.title || 'Sin Título'}</h2>
+                        <p class="text-sm text-gray-400 note-preview">${previewText || 'Nota vacía...'}</p>
+                    </div>
+                    <div class="flex justify-end mt-4 space-x-2">
+                        <button class="edit-btn bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-bold py-1 px-3 rounded-lg text-xs transition duration-300">Editar</button>
+                        <button class="archive-btn bg-green-400 hover:bg-green-500 text-white font-bold py-1 px-3 rounded-lg text-xs transition duration-300">
+                            ${note.status === 'archived' ? 'Desarchivar' : 'Archivar'}
+                        </button>
+                        <button class="delete-btn bg-red-400 hover:bg-red-500 text-white font-bold py-1 px-3 rounded-lg text-xs transition duration-300">Eliminar</button>
+                    </div>
+                `;
+                noteElement.innerHTML = noteContent;
+                notesContainer.appendChild(noteElement);
+            });
+        }
+
+        // --- Editor Modal ---
+        function showEditor(note = null) {
+            if (note) {
+                noteTitleInput.value = note.title;
+                noteEditor.innerHTML = note.content;
+                editingNoteId = note.id;
+                noteDatesContainer.classList.remove('hidden');
+                createdAtParagraph.textContent = `Creada: ${formatDate(note.createdAt)}`;
+                updatedAtParagraph.textContent = note.updatedAt ? `Última edición: ${formatDate(note.updatedAt)}` : '';
+            } else {
+                noteTitleInput.value = '';
+                noteEditor.innerHTML = '<div><br></div>';
+                editingNoteId = null;
+                noteDatesContainer.classList.add('hidden');
+            }
+            editorModal.classList.remove('hidden');
+            noteEditor.focus();
+        }
+
+        function hideEditor() {
+            editorModal.classList.add('hidden');
+        }
+
+        function formatText(command) {
+            document.execCommand(command, false, null);
+            noteEditor.focus();
+        }
+        
+        // --- Image Cropping (REBUILT) ---
+        function startCropper(imageDataUrl, callback) {
+            const originalImage = new Image();
+            originalImage.src = imageDataUrl;
+            originalImage.onload = () => {
+                const ctx = cropCanvas.getContext('2d');
+                const MAX_WIDTH = 600, MAX_HEIGHT = 400;
+                let { width, height } = originalImage;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                } else {
+                    if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                }
+                cropCanvas.width = width;
+                cropCanvas.height = height;
+                ctx.drawImage(originalImage, 0, 0, width, height);
+                
+                let selection = { x: width * 0.1, y: height * 0.1, width: width * 0.8, height: height * 0.8 };
+                let dragInfo = { active: false, target: null, startX: 0, startY: 0 };
+
+                const drawSelection = () => {
+                    cropSelection.style.left = `${selection.x}px`;
+                    cropSelection.style.top = `${selection.y}px`;
+                    cropSelection.style.width = `${selection.width}px`;
+                    cropSelection.style.height = `${selection.height}px`;
+                };
+
+                const onMouseDown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const containerRect = cropCanvas.getBoundingClientRect();
+                    const x = e.clientX - containerRect.left;
+                    const y = e.clientY - containerRect.top;
+                    dragInfo.startX = x;
+                    dragInfo.startY = y;
+                    
+                    if (e.target.classList.contains('resize-handle')) {
+                        dragInfo.active = true;
+                        dragInfo.target = e.target.className.split(' ')[1];
+                    } else if (e.target.classList.contains('crop-selection-body')) {
+                        dragInfo.active = true;
+                        dragInfo.target = 'move';
+                    }
+                };
+                
+                const onMouseMove = (e) => {
+                    if (!dragInfo.active) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const containerRect = cropCanvas.getBoundingClientRect();
+                    const x = e.clientX - containerRect.left;
+                    const y = e.clientY - containerRect.top;
+                    const dx = x - dragInfo.startX;
+                    const dy = y - dragInfo.startY;
+
+                    switch (dragInfo.target) {
+                        case 'move':
+                            selection.x += dx;
+                            selection.y += dy;
+                            break;
+                        case 'top-left':
+                            selection.x += dx; selection.y += dy; selection.width -= dx; selection.height -= dy;
+                            break;
+                        case 'top-right':
+                            selection.y += dy; selection.width += dx; selection.height -= dy;
+                            break;
+                        case 'bottom-left':
+                            selection.x += dx; selection.width -= dx; selection.height += dy;
+                            break;
+                        case 'bottom-right':
+                            selection.width += dx; selection.height += dy;
+                            break;
+                    }
+                    
+                    if (selection.width < 20) selection.width = 20;
+                    if (selection.height < 20) selection.height = 20;
+
+                    selection.x = Math.max(0, Math.min(selection.x, width - selection.width));
+                    selection.y = Math.max(0, Math.min(selection.y, height - selection.height));
+                    
+                    dragInfo.startX = x;
+                    dragInfo.startY = y;
+                    drawSelection();
+                };
+                
+                const onMouseUp = () => {
+                    dragInfo.active = false;
+                };
+
+                const cropAndFinish = () => {
+                    const croppedCanvas = document.createElement('canvas');
+                    croppedCanvas.width = selection.width;
+                    croppedCanvas.height = selection.height;
+                    const croppedCtx = croppedCanvas.getContext('2d');
+                    const scaleX = originalImage.width / width; // This now works
+                    const scaleY = originalImage.height / height; // This now works
+                    croppedCtx.drawImage(originalImage, selection.x * scaleX, selection.y * scaleY, selection.width * scaleX, selection.height * scaleY, 0, 0, selection.width, selection.height);
+                    
+                    removeListeners();
+                    callback(croppedCanvas.toDataURL('image/png'));
+                };
+
+                const cancelAndFinish = () => {
+                    removeListeners();
+                    callback(null);
+                };
+                
+                const removeListeners = () => {
+                    cropSelection.removeEventListener('mousedown', onMouseDown);
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                    cropBtn.onclick = null;
+                    cancelCropBtn.onclick = null;
+                };
+
+                cropSelection.addEventListener('mousedown', onMouseDown);
+                window.addEventListener('mousemove', onMouseMove);
+                window.addEventListener('mouseup', onMouseUp);
+                cropBtn.onclick = cropAndFinish;
+                cancelCropBtn.onclick = cancelAndFinish;
+                
+                drawSelection();
+            };
+        }
+
+        // --- Event Listeners ---
+        addNoteBtn.addEventListener('click', () => showEditor());
+
+        saveNoteBtn.addEventListener('click', () => {
+            const title = noteTitleInput.value.trim();
+            const content = noteEditor.innerHTML;
+
+            if (!title && getPlainText(content).length === 0) {
+                showConfirmation("No se puede guardar una nota vacía.");
+                return;
+            }
+
+            if (editingNoteId !== null) {
+                const noteIndex = notes.findIndex(note => note.id === editingNoteId);
+                if (noteIndex !== -1) {
+                    notes[noteIndex].title = title;
+                    notes[noteIndex].content = content;
+                    notes[noteIndex].updatedAt = new Date().toISOString();
+                }
+                showConfirmation("Nota actualizada con éxito.");
+            } else {
+                const newNote = {
+                    id: Date.now(), title, content,
+                    createdAt: new Date().toISOString(), updatedAt: null, status: 'active'
+                };
+                notes.unshift(newNote);
+                showConfirmation("Nota guardada con éxito.");
+            }
+            saveNotes();
+            renderNotes();
+            hideEditor();
+        });
+
+        cancelNoteBtn.addEventListener('click', () => hideEditor());
+
+        addImageBtn.addEventListener('click', () => imageInput.click());
+
+        imageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && event.target) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    editorModal.classList.add('hidden');
+                    cropModal.classList.remove('hidden');
+                    startCropper(e.target.result, (croppedDataUrl) => {
+                        if (croppedDataUrl) {
+                            const imgTag = `<div><img src="${croppedDataUrl}" class="my-2 rounded-lg max-w-full h-auto"></div>`;
+                            document.execCommand('insertHTML', false, imgTag);
+                        }
+                        cropModal.classList.add('hidden');
+                        editorModal.classList.remove('hidden');
+                        noteEditor.focus();
+                    });
+                };
+                reader.readAsDataURL(file);
+                event.target.value = '';
+            }
+        });
+        
+        toggleChecklistBtn.addEventListener('click', () => {
+            const checklistHtml = `<div class="checklist-item-display" contenteditable="false"><input type="checkbox"><span contenteditable="true"></span></div>`;
+            document.execCommand('insertHTML', false, checklistHtml);
+        });
+        
+        noteEditor.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+
+                const range = selection.getRangeAt(0);
+                const currentElement = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+                const checklistItem = currentElement.closest('.checklist-item-display');
+
+                if (checklistItem) {
+                    e.preventDefault();
+                    const textSpan = checklistItem.querySelector('span');
+                    
+                    if (textSpan && textSpan.innerText.trim() === '') {
+                        const newPara = document.createElement('div');
+                        newPara.innerHTML = '<br>';
+                        checklistItem.parentNode.replaceChild(newPara, checklistItem);
+                        range.setStart(newPara, 1);
+                        range.collapse(true);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    } else {
+                        const newChecklistItem = document.createElement('div');
+                        newChecklistItem.className = 'checklist-item-display';
+                        newChecklistItem.setAttribute('contenteditable', 'false');
+                        newChecklistItem.innerHTML = '<input type="checkbox"><span contenteditable="true"></span>';
+                        checklistItem.after(newChecklistItem);
+                        
+                        const newSpan = newChecklistItem.querySelector('span');
+                        range.setStart(newSpan, 0);
+                        range.collapse(true);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+                }
+            }
+        });
+
+        notesContainer.addEventListener('click', (e) => {
+            const noteCard = e.target.closest('.note-card');
+            if (!noteCard) return;
+            const noteId = parseInt(noteCard.dataset.id);
+            const note = notes.find(n => n.id === noteId);
+
+            if (e.target.classList.contains('edit-btn')) { showEditor(note); } 
+            else if (e.target.classList.contains('delete-btn')) { showDeleteModal(noteId); } 
+            else if (e.target.classList.contains('archive-btn')) {
+                note.status = note.status === 'archived' ? 'active' : 'archived';
+                showConfirmation(note.status === 'archived' ? 'Nota archivada.' : 'Nota desarchivada.');
+                saveNotes();
+                renderNotes();
+            } else {
+                showEditor(note);
+            }
+        });
+
+        function showDeleteModal(noteId) {
+            confirmDeleteBtn.dataset.noteId = noteId;
+            deleteModal.classList.remove('hidden');
+        }
+
+        function hideDeleteModal() {
+            deleteModal.classList.add('hidden');
+        }
+
+        confirmDeleteBtn.addEventListener('click', () => {
+            const noteIdToDelete = parseInt(confirmDeleteBtn.dataset.noteId);
+            notes = notes.filter(note => note.id !== noteIdToDelete);
+            saveNotes();
+            renderNotes();
+            hideDeleteModal();
+            showConfirmation("Nota eliminada.");
+        });
+
+        cancelDeleteBtn.addEventListener('click', () => hideDeleteModal());
+
+        searchInput.addEventListener('input', () => renderNotes());
+        
+        allNotesBtn.addEventListener('click', () => {
+            currentView = 'active';
+            allNotesBtn.classList.add('bg-blue-600', 'text-white');
+            allNotesBtn.classList.remove('bg-gray-700', 'text-gray-200');
+            archivedNotesBtn.classList.remove('bg-blue-600', 'text-white');
+            archivedNotesBtn.classList.add('bg-gray-700', 'text-gray-200');
+            renderNotes();
+        });
+
+        archivedNotesBtn.addEventListener('click', () => {
+            currentView = 'archived';
+            archivedNotesBtn.classList.add('bg-blue-600', 'text-white');
+            archivedNotesBtn.classList.remove('bg-gray-700', 'text-gray-200');
+            allNotesBtn.classList.remove('bg-blue-600', 'text-white');
+            allNotesBtn.classList.add('bg-gray-700', 'text-gray-200');
+            renderNotes();
+        });
+
+        // Initial load
+        loadNotes();
+    </script>
+</body>
+</html>

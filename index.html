@@ -4,6 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aplicación de Notas Definitiva</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#3b82f6"/>
+    <link rel="manifest" href="manifest.json">
+
+    <!-- iOS specific meta tags for PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mis Notas">
+    <link rel="apple-touch-icon" href="icon-192x192.png">
+
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -83,14 +95,13 @@
             position: relative;
             overflow: hidden;
             max-width: 100%;
-            cursor: crosshair; /* Added cursor */
+            cursor: crosshair;
         }
         #crop-canvas { display: block; background: #2d3748; }
         #crop-selection {
             position: absolute;
             border: 2px dashed #a0a0ff;
             box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
-            /* Removed cursor: move; from here to be more specific */
         }
         .crop-selection-body {
             width: 100%;
@@ -355,7 +366,7 @@
             noteEditor.focus();
         }
         
-        // --- Image Cropping (REBUILT) ---
+        // --- Image Cropping ---
         function startCropper(imageDataUrl, callback) {
             const originalImage = new Image();
             originalImage.src = imageDataUrl;
@@ -452,8 +463,8 @@
                     croppedCanvas.width = selection.width;
                     croppedCanvas.height = selection.height;
                     const croppedCtx = croppedCanvas.getContext('2d');
-                    const scaleX = originalImage.width / width; // This now works
-                    const scaleY = originalImage.height / height; // This now works
+                    const scaleX = originalImage.width / width;
+                    const scaleY = originalImage.height / height;
                     croppedCtx.drawImage(originalImage, selection.x * scaleX, selection.y * scaleY, selection.width * scaleX, selection.height * scaleY, 0, 0, selection.width, selection.height);
                     
                     removeListeners();
@@ -642,6 +653,17 @@
             allNotesBtn.classList.add('bg-gray-700', 'text-gray-200');
             renderNotes();
         });
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(registration => {
+                    console.log('ServiceWorker registrado con éxito: ', registration.scope);
+                }, err => {
+                    console.log('El registro de ServiceWorker falló: ', err);
+                });
+            });
+        }
 
         // Initial load
         loadNotes();
